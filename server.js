@@ -23,7 +23,12 @@ function getSignatureKey(secretKey, dateStamp, region, service) {
 function callBedrock({ accessKey, secretKey, region, modelId, body }) {
   return new Promise((resolve, reject) => {
     const host = `bedrock-runtime.${region}.amazonaws.com`;
-    const uri = `/model/${encodeURIComponent(modelId)}/invoke`;
+    
+    // N8N double-encodes the colon, so we must sign with double-encoded URI
+    // but send the request with single-encoded URI
+    const singleEncoded = `/model/${modelId.replace(/:/g, '%3A')}/invoke`;
+    const doubleEncoded = `/model/${modelId.replace(/:/g, '%253A')}/invoke`;
+    
     const bodyStr = typeof body === 'string' ? body : JSON.stringify(body);
 
     const now = new Date();
@@ -33,7 +38,9 @@ function callBedrock({ accessKey, secretKey, region, modelId, body }) {
 
     const canonicalHeaders = `content-type:application/json\nhost:${host}\nx-amz-date:${amzDate}\n`;
     const signedHeaders = 'content-type;host;x-amz-date';
-    const canonicalRequest = `POST\n${uri}\n\n${canonicalHeaders}\n${signedHeaders}\n${payloadHash}`;
+    
+    // Sign with doubleEncoded to match what AWS actually receives
+    const canonicalRequest = `POST\n${doubleEncoded}\n\n${canonicalHeaders}\n${signedHeaders}\n${payloadHash}`;
 
     const credentialScope = `${dateStamp}/${region}/bedrock/aws4_request`;
     const stringToSign = `AWS4-HMAC-SHA256\n${amzDate}\n${credentialScope}\n${sha256(canonicalRequest)}`;
@@ -45,7 +52,7 @@ function callBedrock({ accessKey, secretKey, region, modelId, body }) {
     const options = {
       method: 'POST',
       hostname: host,
-      path: uri,
+      path: singleEncoded,  // Send with single encoding
       headers: {
         'Content-Type': 'application/json',
         'X-Amz-Date': amzDate,
